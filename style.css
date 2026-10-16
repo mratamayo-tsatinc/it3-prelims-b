@@ -446,6 +446,31 @@ body, html {
 .modal-actions { display:flex; gap:0.5rem; justify-content:flex-end; }
 .modal .hint { font-size: 0.85rem; color:#666; margin:4px 0 0 0; }
 .invalid { border: 1px solid var(--error) !important; }
+.settings-danger-zone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e5e5;
+}
+.settings-danger-zone h4 { margin: 0 0 0.2rem; font-size: 0.9rem; }
+.settings-danger-zone .hint { margin: 0; }
+.danger-btn {
+    flex: none;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--error);
+    border-radius: 5px;
+    background: transparent;
+    color: var(--error);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.danger-btn:hover,
+.danger-btn:focus-visible { background: rgba(176, 0, 32, 0.08); outline: none; }
 
 /* Unified score summary, adapted from CodeScope's session-score experience. */
 .show-score-btn {

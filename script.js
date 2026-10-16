@@ -200,11 +200,61 @@ window.onload = async function() {
         const examSettings = document.getElementById('examSettings');
         examSettings.style.display = (appMode === 'exam') ? 'block' : 'none';
         document.getElementById('examMinutesInput').value = examMinutes;
+        updateClearProgressStatus();
         m.style.display = 'flex';
     }
 
     function closeSettingsModal() {
         const m = document.getElementById('settingsModal'); if (m) m.style.display = 'none';
+    }
+
+    function getSavedStudentProgressKeys() {
+        const keys = [];
+        try {
+            for (let index = 0; index < localStorage.length; index++) {
+                const key = localStorage.key(index);
+                if (key?.startsWith(EXAM_STORAGE_PREFIX)) keys.push(key);
+            }
+        } catch (error) {
+            console.warn('Unable to inspect saved student progress.', error);
+        }
+        return keys;
+    }
+
+    function updateClearProgressStatus(message = '') {
+        const status = document.getElementById('clearProgressStatus');
+        if (!status) return;
+        if (message) {
+            status.textContent = message;
+            return;
+        }
+
+        const count = getSavedStudentProgressKeys().length;
+        status.textContent = count === 0
+            ? 'No student progress is saved in this browser.'
+            : `${count} student record${count === 1 ? '' : 's'} saved in this browser.`;
+    }
+
+    function clearSavedStudentProgress() {
+        const keys = getSavedStudentProgressKeys();
+        if (keys.length === 0) {
+            updateClearProgressStatus('No saved student progress to clear.');
+            return;
+        }
+
+        const recordLabel = `${keys.length} saved student record${keys.length === 1 ? '' : 's'}`;
+        const confirmed = window.confirm(
+            `Clear ${recordLabel} from this browser? This cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        try {
+            keys.forEach(key => localStorage.removeItem(key));
+            updateClearProgressStatus(`${recordLabel} cleared.`);
+        } catch (error) {
+            console.error('Unable to clear saved student progress.', error);
+            updateClearProgressStatus('Could not clear saved progress. Please try again.');
+        }
     }
 
     function saveSettings() {

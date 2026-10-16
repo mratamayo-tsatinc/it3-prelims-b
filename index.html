@@ -95,6 +95,15 @@
                     <label>Timer (minutes): <input id="examMinutesInput" type="number" min="1" max="180" value="15"></label>
                     <p class="hint">Enter minutes (whole numbers only).</p>
                 </div>
+                <section class="settings-danger-zone" aria-labelledby="clearProgressHeading">
+                    <div>
+                        <h4 id="clearProgressHeading">Saved student progress</h4>
+                        <p id="clearProgressStatus" class="hint" role="status" aria-live="polite"></p>
+                    </div>
+                    <button class="danger-btn" type="button" onclick="clearSavedStudentProgress()">
+                        Clear progress
+                    </button>
+                </section>
             </div>
             <div class="modal-actions">
                 <button class="secondary-btn" onclick="closeSettingsModal()">Cancel</button>
