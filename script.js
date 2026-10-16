@@ -898,28 +898,266 @@ function exportProgress() {
     a.click();
 }
 
-// Show score modal; reason: 'complete' | 'time'
-function showScoreModal(reason) {
-    if (scoreModalShown) return;
-    scoreModalShown = true;
-    const totalCorrect = Array.from(Object.values(exerciseData)).reduce((s,d) => s + (d.lastScore||0), 0);
-    const totalMax = Array.from(Object.values(exerciseData)).reduce((s,d) => s + (d.wrongCount||0), 0);
-    const scoreEmail = document.getElementById('scoreEmail');
-    const scoreBig = document.getElementById('scoreBig');
+// Unified score summary and encrypted QR sharing, adapted from CodeScope-v2.
+const QR_SHARED_PASSPHRASE = 'AA-9002341ds2sd14-dsfs12sd-54231hg';
+const QR_SALT_STRING = 'java-activity-qr-salt-v1';
+const QR_RESULTS_VIEWER_URL = 'https://mratamayo-tsatinc.github.io/qr/it5b-w4.html';
+
+let scoreModalClockInterval = null;
+let scoreSummaryDownloadInProgress = false;
+let scoreQrGeneration = 0;
+
+function computeSessionScore() {
+    return Object.values(exerciseData).reduce((score, data) => {
+        score.earned += data.lastScore || 0;
+        score.maximum += data.wrongCount || 0;
+        return score;
+    }, { earned: 0, maximum: 0 });
+}
+
+function formatScoreTimestamp(date) {
+    const dayDate = date.toLocaleDateString(undefined, {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+    const time = date.toLocaleTimeString(undefined, {
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    return `${dayDate}  ·  ${time}`;
+}
+
+function tickScoreModalClock() {
+    const clock = document.getElementById('scoreSummaryClock');
+    if (clock) clock.textContent = formatScoreTimestamp(new Date());
+}
+
+function renderScoreSummaryContent() {
+    const score = computeSessionScore();
+    const earned = document.getElementById('scoreSummaryEarned');
+    const maximum = document.getElementById('scoreSummaryMaximum');
+    const total = document.getElementById('scoreSummaryTotal');
+    const user = document.getElementById('scoreSummaryUser');
     const breakdown = document.getElementById('scoreBreakdown');
-    if (scoreEmail) scoreEmail.textContent = currentUser || '';
-    if (scoreBig) scoreBig.textContent = `${totalCorrect} / ${totalMax}`;
-    if (breakdown) {
-        let html = '';
-        for (const f in exerciseData) {
-            const d = exerciseData[f];
-            html += `<div style="margin:6px 0;">${f.replace('.java','')}: ${d.lastScore||0}/${d.wrongCount||0}</div>`;
+
+    if (earned) earned.textContent = score.earned;
+    if (maximum) maximum.textContent = score.maximum;
+    if (total) total.setAttribute('aria-label', `${score.earned} out of ${score.maximum} points`);
+    if (user) user.textContent = currentUser || '—';
+    tickScoreModalClock();
+
+    if (!breakdown) return;
+    breakdown.textContent = '';
+
+    for (const fileName of EXERCISES) {
+        const data = exerciseData[fileName];
+        if (!data) continue;
+
+        const row = document.createElement('div');
+        row.className = 'score-summary-exercise-row';
+
+        const name = document.createElement('span');
+        name.className = 'sse-name';
+        name.textContent = fileName.replace(/\.c$/i, '');
+
+        const value = document.createElement('span');
+        value.className = 'sse-value';
+        const selectedCount = data.userProgress.filter(Boolean).length;
+        if (data.lastVerifiedAt) {
+            const percent = data.wrongCount > 0 ? Math.round((data.lastScore / data.wrongCount) * 100) : 0;
+            value.textContent = `${data.lastScore} / ${data.wrongCount} · ${percent}%`;
+        } else if (data.locked) {
+            value.textContent = `0 / ${data.wrongCount} · Not submitted`;
+        } else if (selectedCount > 0) {
+            value.textContent = `0 / ${data.wrongCount} · In progress`;
+        } else {
+            value.textContent = `0 / ${data.wrongCount} · Not started`;
         }
-        breakdown.innerHTML = html;
+
+        row.append(name, value);
+        breakdown.appendChild(row);
     }
-    const m = document.getElementById('scoreModal'); if (m) m.style.display = 'flex';
+}
+
+function openScoreModal() {
+    showScoreModal('manual');
+}
+
+// reason: 'manual' | 'complete' | 'time'
+function showScoreModal(reason = 'manual') {
+    const automatic = reason === 'complete' || reason === 'time';
+    if (automatic && scoreModalShown) return;
+    if (automatic) scoreModalShown = true;
+
+    const modal = document.getElementById('scoreModal');
+    if (!modal) return;
+    modal.classList.toggle('score-summary-exam', appMode === 'exam');
+    modal.style.display = 'flex';
+
+    const status = document.getElementById('scoreSummaryDownloadStatus');
+    if (status) status.textContent = '';
+    renderScoreSummaryContent();
+
+    if (scoreModalClockInterval !== null) clearInterval(scoreModalClockInterval);
+    scoreModalClockInterval = setInterval(tickScoreModalClock, 1000);
+    renderScoreSummaryQr();
 }
 
 function closeScoreModal() {
-    const m = document.getElementById('scoreModal'); if (m) m.style.display = 'none';
+    if (scoreSummaryDownloadInProgress) return;
+    const modal = document.getElementById('scoreModal');
+    if (modal) modal.style.display = 'none';
+    if (scoreModalClockInterval !== null) {
+        clearInterval(scoreModalClockInterval);
+        scoreModalClockInterval = null;
+    }
 }
+
+function handleScoreModalBackdrop(event) {
+    if (event.target === event.currentTarget) closeScoreModal();
+}
+
+async function deriveQrKey() {
+    if (!window.crypto?.subtle) throw new Error('Secure QR encryption is unavailable in this browser.');
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw', encoder.encode(QR_SHARED_PASSPHRASE), { name: 'PBKDF2' }, false, ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: encoder.encode(QR_SALT_STRING), iterations: 100000, hash: 'SHA-256' },
+        keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt']
+    );
+}
+
+function bufferToBase64Url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function encryptQrPayload(payload) {
+    const key = await deriveQrKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(ciphertext), iv.length);
+    return bufferToBase64Url(combined);
+}
+
+function getCleanSourceUrl() {
+    return window.location.href.split(/[?#]/)[0].replace(/^https?:\/\//i, '');
+}
+
+async function buildResultsShareUrl(score, maximum) {
+    const token = await encryptQrPayload({
+        e: currentUser,
+        t: Math.floor(Date.now() / 1000),
+        s: score,
+        m: maximum
+    });
+    const url = new URL(QR_RESULTS_VIEWER_URL);
+    url.searchParams.set('d', token);
+    url.searchParams.set('a', getCleanSourceUrl());
+    url.searchParams.set('n', document.title);
+    return url.toString();
+}
+
+function renderQrInto(box, shareUrl, size) {
+    box.innerHTML = '';
+    new QRCode(box, {
+        text: shareUrl,
+        width: size,
+        height: size,
+        colorDark: '#1a1a1a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.L
+    });
+}
+
+async function renderScoreSummaryQr() {
+    const box = document.getElementById('scoreQrCodeBox');
+    if (!box || !currentUser) return;
+    const generation = ++scoreQrGeneration;
+    box.innerHTML = '<span class="qr-loading">Preparing QR…</span>';
+
+    try {
+        if (typeof QRCode === 'undefined') throw new Error('The QR code component is unavailable.');
+        const score = computeSessionScore();
+        const shareUrl = await buildResultsShareUrl(score.earned, score.maximum);
+        if (generation !== scoreQrGeneration) return;
+        renderQrInto(box, shareUrl, 190);
+    } catch (error) {
+        console.error('Score QR generation failed:', error);
+        if (generation === scoreQrGeneration) {
+            box.innerHTML = '<span class="qr-loading">QR code unavailable</span>';
+        }
+    }
+}
+
+function scoreSummaryPngFilename(date) {
+    const pad = value => String(value).padStart(2, '0');
+    const timestamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+    return `bug-catcher-session-${timestamp}.png`;
+}
+
+function scoreSummaryCanvasBlob(canvas) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('PNG creation returned no image data.')), 'image/png');
+    });
+}
+
+async function downloadScoreSummaryPng() {
+    if (scoreSummaryDownloadInProgress) return;
+    const modal = document.getElementById('scoreModal');
+    const capture = modal?.querySelector('.score-card');
+    const button = document.getElementById('scoreSummaryDownloadBtn');
+    const buttonLabel = button?.querySelector('span');
+    const status = document.getElementById('scoreSummaryDownloadStatus');
+    if (!capture) return;
+
+    scoreSummaryDownloadInProgress = true;
+    if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+    if (buttonLabel) buttonLabel.textContent = 'Preparing…';
+    if (status) status.textContent = 'Preparing PNG…';
+
+    try {
+        if (typeof html2canvas !== 'function') throw new Error('The PNG export component is unavailable.');
+        renderScoreSummaryContent();
+        await renderScoreSummaryQr();
+        if (document.fonts?.ready) await document.fonts.ready;
+
+        const canvas = await html2canvas(capture, {
+            backgroundColor: appMode === 'exam' ? '#103d6b' : '#ffffff',
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            onclone: clonedDocument => {
+                clonedDocument.querySelector('#scoreModal .score-card')?.classList.add('score-summary-exporting');
+            }
+        });
+        const blob = await scoreSummaryCanvasBlob(canvas);
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = scoreSummaryPngFilename(new Date());
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+        if (status) status.textContent = 'PNG downloaded.';
+    } catch (error) {
+        console.error('Score summary PNG export failed:', error);
+        if (status) status.textContent = 'Could not download PNG. Please try again.';
+    } finally {
+        scoreSummaryDownloadInProgress = false;
+        if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+        if (buttonLabel) buttonLabel.textContent = 'Download PNG';
+    }
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('scoreModal')?.style.display === 'flex') {
+        closeScoreModal();
+    }
+});

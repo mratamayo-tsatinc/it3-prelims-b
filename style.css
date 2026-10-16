@@ -400,9 +400,200 @@ body, html {
 .modal .hint { font-size: 0.85rem; color:#666; margin:4px 0 0 0; }
 .invalid { border: 1px solid var(--error) !important; }
 
-/* Score modal specifics */
-.score-card { max-width: 420px; text-align: center; position: relative; }
-.score-card .close-x { position: absolute; right: 10px; top: 8px; background: transparent; border: none; cursor: pointer; }
-.student-email { color: #666; font-size: 0.95rem; margin-bottom: 6px; }
-.student-score { font-size: 2.5rem; font-weight: 800; margin: 8px 0; color: var(--primary); }
-.score-breakdown { text-align: left; margin-top: 8px; font-family: 'Roboto Mono', monospace; }
+/* Unified score summary, adapted from CodeScope's session-score experience. */
+.show-score-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid rgba(98, 0, 238, 0.28);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.show-score-btn:hover,
+.show-score-btn:focus-visible {
+    background: rgba(98, 0, 238, 0.07);
+    border-color: var(--primary);
+    outline: none;
+}
+
+.score-summary-modal { padding: 1rem; box-sizing: border-box; }
+.score-card {
+    width: min(94vw, 680px);
+    max-width: 680px;
+    max-height: min(92vh, 820px);
+    padding: 0;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+}
+.score-summary-modal.score-summary-exam .score-card {
+    color: #fff;
+    background: linear-gradient(155deg, #164f88 0%, #103d6b 48%, #0b3158 100%);
+    border-color: rgba(129, 194, 255, 0.68);
+    box-shadow: 0 24px 70px rgba(2, 25, 52, 0.62), 0 0 0 1px rgba(117, 185, 255, 0.12) inset;
+}
+.score-modal-header,
+.score-modal-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 1rem 1.25rem;
+    border-color: #eee;
+}
+.score-modal-header {
+    justify-content: space-between;
+    border-bottom: 1px solid #eee;
+}
+.score-modal-header h2 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.score-modal-close {
+    border: 0;
+    background: transparent;
+    color: #777;
+    padding: 0.25rem;
+    font-size: 1rem;
+    cursor: pointer;
+}
+.score-modal-close:hover { color: var(--text-main); }
+.score-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    min-height: 0;
+    overflow: hidden;
+    padding: 1.1rem 1.35rem;
+}
+.score-modal-footer {
+    justify-content: flex-end;
+    border-top: 1px solid #eee;
+}
+.score-summary-modal.score-summary-exam .score-modal-header,
+.score-summary-modal.score-summary-exam .score-modal-footer {
+    border-color: rgba(169, 211, 255, 0.24);
+}
+.score-summary-modal.score-summary-exam .score-modal-close { color: #cfe7ff; }
+.score-summary-modal.score-summary-exam .score-modal-close:hover { color: #fff; }
+
+.score-summary-primary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 218px;
+    align-items: center;
+    gap: 1.1rem;
+    flex: none;
+    padding: 0.9rem;
+    border: 1px solid #e7e7e7;
+    border-radius: 10px;
+    background: rgba(98, 0, 238, 0.025);
+}
+.score-summary-modal.score-summary-exam .score-summary-primary,
+.score-summary-modal.score-summary-exam .score-summary-user,
+.score-summary-modal.score-summary-exam .score-summary-exercise-section {
+    border-color: rgba(169, 211, 255, 0.2);
+    background: rgba(255, 255, 255, 0.025);
+}
+.score-summary-total { text-align: center; min-width: 0; }
+.sst-value {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.6rem;
+    color: var(--primary);
+    font-family: 'Roboto Mono', monospace;
+    font-variant-numeric: tabular-nums;
+}
+.sst-earned { font-size: 3rem; line-height: 1; font-weight: 800; }
+.sst-separator { color: #999; font-size: 1.7rem; font-weight: 500; }
+.sst-maximum { color: var(--text-main); font-size: 1.7rem; font-weight: 700; }
+.sst-label { margin-top: 0.3rem; color: #666; font-size: 0.8rem; }
+.score-summary-modal.score-summary-exam .sst-value { color: #7cc4ff; }
+.score-summary-modal.score-summary-exam .sst-separator { color: #9eb9d4; }
+.score-summary-modal.score-summary-exam .sst-maximum { color: #fff; }
+.score-summary-modal.score-summary-exam .sst-label,
+.score-summary-modal.score-summary-exam .ssu-label,
+.score-summary-modal.score-summary-exam .ssu-clock,
+.score-summary-modal.score-summary-exam .qr-caption,
+.score-summary-modal.score-summary-exam .score-summary-download-status,
+.score-summary-modal.score-summary-exam .sse-value { color: #c1ddf8; }
+
+.qr-share-section { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+.qr-code-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 190px;
+    min-height: 190px;
+    padding: 14px;
+    box-sizing: content-box;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.qr-code-box img,
+.qr-code-box canvas { display: block; border-radius: 3px; }
+.qr-loading { color: #777; font-size: 0.75rem; text-align: center; }
+.qr-caption { margin: 0; color: #777; font-size: 0.72rem; text-align: center; }
+
+.score-summary-user,
+.score-summary-exercise-section {
+    flex: none;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid #e7e7e7;
+    border-radius: 8px;
+    background: rgba(98, 0, 238, 0.018);
+}
+.ssu-label,
+.score-summary-exercise-section h3 {
+    margin: 0 0 0.3rem;
+    color: #777;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.ssu-value { overflow-wrap: anywhere; font: 0.82rem 'Roboto Mono', monospace; }
+.ssu-clock { margin-top: 0.2rem; color: #666; font: 0.72rem 'Roboto Mono', monospace; }
+.score-summary-exercise-section { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.score-summary-exercise-breakdown { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.score-summary-exercise-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #eee;
+}
+.score-summary-exercise-row:last-child { border-bottom: 0; }
+.score-summary-modal.score-summary-exam .score-summary-exercise-row { border-color: rgba(169, 211, 255, 0.16); }
+.sse-name { min-width: 0; font-size: 0.78rem; font-weight: 600; }
+.sse-value { flex: none; color: #666; font: 0.74rem 'Roboto Mono', monospace; white-space: nowrap; }
+
+.score-summary-download-status { flex: 1; min-width: 0; color: #777; font-size: 0.72rem; }
+.score-summary-download-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.score-summary-exporting .score-modal-close,
+.score-summary-exporting .score-modal-footer { display: none !important; }
+
+@media (max-width: 520px) {
+    .score-summary-modal { align-items: flex-end; padding: 0; }
+    .score-card { width: 100%; max-height: 94dvh; border-radius: 14px 14px 0 0; }
+    .score-modal-header { padding: 0.9rem 1rem; }
+    .score-modal-body { gap: 0.65rem; padding: 0.75rem; }
+    .score-summary-primary { grid-template-columns: minmax(0, 1fr) 154px; gap: 0.55rem; padding: 0.65rem; }
+    .sst-earned { font-size: 2.25rem; }
+    .sst-separator, .sst-maximum { font-size: 1.35rem; }
+    .qr-code-box { min-width: 142px; min-height: 142px; padding: 8px; }
+    .qr-code-box img, .qr-code-box canvas { width: 142px !important; height: 142px !important; }
+    .score-modal-footer { display: grid; grid-template-columns: 1fr 1fr; padding: 0.8rem; }
+    .score-summary-download-status { grid-column: 1 / -1; min-height: 0.9rem; }
+    .score-modal-footer button { width: 100%; }
+}

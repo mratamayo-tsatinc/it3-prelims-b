@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>C - Bug Catcher</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&family=Roboto+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -32,6 +33,11 @@
                     <div style="font-size:0.9rem; color:#666;">Total Score</div>
                     <div style="font-weight:700; font-size:1.1rem;"> <span id="accScore">0</span> / <span id="maxScore">0</span></div>
                 </div>
+                <button id="showScoreBtn" class="show-score-btn" type="button" onclick="openScoreModal()"
+                    title="View session score and QR code" aria-label="View session score summary and QR code">
+                    <i class="fa-solid fa-chart-simple" aria-hidden="true"></i>
+                    <span>Show Score</span>
+                </button>
             </div>
             <hr>
             <h3>Exercises</h3>
@@ -69,6 +75,8 @@
             </div>
         </main>
     </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="script.js"></script>
     
@@ -91,18 +99,50 @@
         </div>
     </div>
 
-    <!-- Score Summary Modal -->
-    <div id="scoreModal" class="modal" style="display:none;">
+    <!-- Unified Score Summary Modal -->
+    <div id="scoreModal" class="modal score-summary-modal" style="display:none;" role="dialog"
+        aria-modal="true" aria-labelledby="scoreSummaryTitle" onclick="handleScoreModalBackdrop(event)">
         <div class="modal-card score-card">
-            <button class="close-x" onclick="closeScoreModal()">✖</button>
-            <h3>Score Summary</h3>
-            <div class="modal-body score-body">
-                <div class="student-email" id="scoreEmail"></div>
-                <div class="student-score" id="scoreBig"></div>
-                <div class="score-breakdown" id="scoreBreakdown"></div>
+            <div class="score-modal-header">
+                <h2 id="scoreSummaryTitle">Session Score Summary</h2>
+                <button class="score-modal-close" type="button" onclick="closeScoreModal()" aria-label="Close score summary">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
             </div>
-            <div class="modal-actions">
-                <button class="primary-btn" onclick="closeScoreModal()">OK</button>
+            <div class="score-modal-body">
+                <div class="score-summary-primary">
+                    <div class="score-summary-total">
+                        <div id="scoreSummaryTotal" class="sst-value">
+                            <span id="scoreSummaryEarned" class="sst-earned">0</span>
+                            <span class="sst-separator" aria-hidden="true">/</span>
+                            <span id="scoreSummaryMaximum" class="sst-maximum">0</span>
+                        </div>
+                        <div class="sst-label">Total Bug Catcher score</div>
+                    </div>
+                    <div class="qr-share-section">
+                        <div id="scoreQrCodeBox" class="qr-code-box" aria-label="QR code linking to a shareable results page">
+                            <span class="qr-loading">Preparing QR…</span>
+                        </div>
+                        <p class="qr-caption">Scan to view a shareable results page</p>
+                    </div>
+                </div>
+                <div class="score-summary-user">
+                    <div class="ssu-label">Logged in as</div>
+                    <div id="scoreSummaryUser" class="ssu-value"></div>
+                    <div id="scoreSummaryClock" class="ssu-clock"></div>
+                </div>
+                <section class="score-summary-exercise-section" aria-labelledby="scoreSummaryExerciseHeading">
+                    <h3 id="scoreSummaryExerciseHeading">Exercise breakdown</h3>
+                    <div id="scoreBreakdown" class="score-summary-exercise-breakdown"></div>
+                </section>
+            </div>
+            <div class="score-modal-footer">
+                <span id="scoreSummaryDownloadStatus" class="score-summary-download-status" role="status" aria-live="polite"></span>
+                <button class="secondary-btn" type="button" onclick="closeScoreModal()">Close</button>
+                <button id="scoreSummaryDownloadBtn" class="primary-btn score-summary-download-btn" type="button" onclick="downloadScoreSummaryPng()">
+                    <i class="fa-solid fa-download" aria-hidden="true"></i>
+                    <span>Download PNG</span>
+                </button>
             </div>
         </div>
     </div>
