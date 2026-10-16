@@ -1,4 +1,4 @@
-#[[includ]] <studio.h>
+#[[includ]] <[[studio.h]]>
 
 int main() {
     [[Char]] name[50];
