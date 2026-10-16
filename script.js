@@ -41,9 +41,53 @@ let timerEndsAt = null;
 let scoreModalShown = false;
 // Track whether we've already shown the full-course celebration
 let totalCelebrated = false;
+let scoreModalPausedItem = null;
 
 const EXAM_STORAGE_PREFIX = 'bug-catcher:exam:';
-const EXAM_STORAGE_VERSION = 1;
+const EXAM_STORAGE_VERSION = 4;
+
+function createItemMetrics() {
+    return {
+        activeTimeMs: 0,
+        visits: 0,
+        answerChanges: 0,
+        activeSinceMs: null
+    };
+}
+
+function normalizeItemMetrics(metrics, savedVersion) {
+    return {
+        activeTimeMs: Number.isFinite(metrics?.activeTimeMs) ? Math.max(0, metrics.activeTimeMs) : 0,
+        visits: Number.isInteger(metrics?.visits) ? Math.max(0, metrics.visits) : 0,
+        // Versions 1–2 counted raw checkbox clicks. Version 3 already counted
+        // deliberate revisions, so its value remains useful under this model.
+        answerChanges: savedVersion >= 3 && Number.isInteger(metrics?.answerChanges)
+            ? Math.max(0, metrics.answerChanges)
+            : 0,
+        activeSinceMs: null
+    };
+}
+
+function pauseItemTimer(fileName = currentFile) {
+    const metrics = exerciseData[fileName]?.metrics;
+    if (!metrics || !Number.isFinite(metrics.activeSinceMs)) return;
+
+    metrics.activeTimeMs += Math.max(0, Date.now() - metrics.activeSinceMs);
+    metrics.activeSinceMs = null;
+}
+
+function resumeItemTimer(fileName = currentFile) {
+    const data = exerciseData[fileName];
+    if (!data || data.locked || document.hidden || scoreModalPausedItem === fileName) return;
+    if (!Number.isFinite(data.metrics.activeSinceMs)) data.metrics.activeSinceMs = Date.now();
+}
+
+function getItemActiveTimeMs(data) {
+    const runningTime = Number.isFinite(data?.metrics?.activeSinceMs) && !document.hidden
+        ? Math.max(0, Date.now() - data.metrics.activeSinceMs)
+        : 0;
+    return Math.max(0, (data?.metrics?.activeTimeMs || 0) + runningTime);
+}
 
 function getExamStorageKey(email = currentUser) {
     return `${EXAM_STORAGE_PREFIX}${encodeURIComponent(email.trim().toLowerCase())}`;
@@ -68,7 +112,7 @@ function readExamState() {
 
     try {
         const saved = JSON.parse(localStorage.getItem(getExamStorageKey()) || 'null');
-        if (!saved || saved.version !== EXAM_STORAGE_VERSION) return null;
+        if (!saved || ![1, 2, 3, EXAM_STORAGE_VERSION].includes(saved.version)) return null;
         if (saved.email.toLowerCase() !== currentUser.toLowerCase()) return null;
         return saved;
     } catch (error) {
@@ -90,7 +134,12 @@ function persistExamState() {
             userProgress: data.userProgress.map(Boolean),
             lastScore: data.lastScore || 0,
             locked: !!data.locked,
-            lastVerifiedAt: data.lastVerifiedAt || null
+            lastVerifiedAt: data.lastVerifiedAt || null,
+            metrics: {
+                activeTimeMs: getItemActiveTimeMs(data),
+                visits: data.metrics.visits,
+                answerChanges: data.metrics.answerChanges
+            }
         };
     }
 
@@ -125,6 +174,7 @@ function restoreExamProgress(savedState) {
             : 0;
         data.locked = !!saved.locked;
         data.lastVerifiedAt = typeof saved.lastVerifiedAt === 'string' ? saved.lastVerifiedAt : null;
+        data.metrics = normalizeItemMetrics(saved.metrics, savedState.version);
     }
 }
 
@@ -235,6 +285,7 @@ window.onload = async function() {
     }
 
     function onTimerExpire() {
+        pauseItemTimer();
         // Ensure no further resets are possible; keep inputs disabled
         for (const file in exerciseData) {
             const data = exerciseData[file];
@@ -373,6 +424,8 @@ function resetCurrentExercise() {
     data.lastScore = 0;
     data.locked = false;
     data.lastVerifiedAt = null;
+    data.metrics = createItemMetrics();
+    data.metrics.visits = 1;
 
     const inputs = document.querySelectorAll('.token-option input[type="checkbox"]');
     inputs.forEach((input, idx) => {
@@ -393,6 +446,7 @@ function resetCurrentExercise() {
 
     // restore enable/disable according to selection rules
     switchExercise(currentFile, document.getElementById(`nav-${currentFile.replace(/\./g,'-')}`));
+    resumeItemTimer(currentFile);
 
     // update total accumulated score
     updateTotalScore();
@@ -670,7 +724,16 @@ function parseExerciseCode(raw) {
     });
 
     const wrongCount = answers.filter(answer => answer.isWrong).length;
-    return { html, answers, userProgress, wrongCount, lastScore: 0, locked: false, lastVerifiedAt: null };
+    return {
+        html,
+        answers,
+        userProgress,
+        wrongCount,
+        lastScore: 0,
+        locked: false,
+        lastVerifiedAt: null,
+        metrics: createItemMetrics()
+    };
 }  
 
 // Toggle a checkbox; enforce maximum selections equal to wrongCount and update selected counter
@@ -704,6 +767,9 @@ function toggleToken(index, checkbox) {
     } else {
         data.userProgress[index] = false;
         checkbox.parentElement.classList.remove('selected');
+        // A retraction is the useful confidence signal. It counts even if the
+        // student later selects the same token again.
+        data.metrics.answerChanges++;
     }
 
     // update selected count UI
@@ -727,7 +793,12 @@ function toggleToken(index, checkbox) {
 }
 
 function switchExercise(name, el) {
+    const previousFile = currentFile;
+    if (previousFile && previousFile !== name) pauseItemTimer(previousFile);
     currentFile = name;
+    const data = exerciseData[name];
+    if (!data.locked && previousFile !== name) data.metrics.visits++;
+    resumeItemTimer(name);
     document.querySelectorAll('.sidebar li').forEach(l => l.classList.remove('active'));
     el.classList.add('active');
     
@@ -806,6 +877,9 @@ function checkAnswers() {
             score++;
         }
     });
+
+    // Freeze the hidden engagement metrics at the moment of submission.
+    pauseItemTimer(currentFile);
 
     // store last score and lock
     data.lastScore = score;
@@ -924,6 +998,17 @@ function formatScoreTimestamp(date) {
     return `${dayDate}  ·  ${time}`;
 }
 
+function formatMetricDuration(milliseconds) {
+    const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+}
+
 function tickScoreModalClock() {
     const clock = document.getElementById('scoreSummaryClock');
     if (clock) clock.textContent = formatScoreTimestamp(new Date());
@@ -971,7 +1056,15 @@ function renderScoreSummaryContent() {
             value.textContent = `0 / ${data.wrongCount} · Not started`;
         }
 
-        row.append(name, value);
+        const details = document.createElement('span');
+        details.className = 'sse-metrics';
+        details.textContent = `Time ${formatMetricDuration(getItemActiveTimeMs(data))} · Answer changes ${data.metrics.answerChanges} · Visits ${data.metrics.visits}`;
+
+        const result = document.createElement('span');
+        result.className = 'sse-result';
+        result.append(value, details);
+
+        row.append(name, result);
         breakdown.appendChild(row);
     }
 }
@@ -988,6 +1081,9 @@ function showScoreModal(reason = 'manual') {
 
     const modal = document.getElementById('scoreModal');
     if (!modal) return;
+    scoreModalPausedItem = !exerciseData[currentFile]?.locked ? currentFile : null;
+    pauseItemTimer(scoreModalPausedItem);
+    persistExamState();
     modal.classList.toggle('score-summary-exam', appMode === 'exam');
     modal.style.display = 'flex';
 
@@ -1008,6 +1104,9 @@ function closeScoreModal() {
         clearInterval(scoreModalClockInterval);
         scoreModalClockInterval = null;
     }
+    const pausedItem = scoreModalPausedItem;
+    scoreModalPausedItem = null;
+    if (pausedItem === currentFile) resumeItemTimer(currentFile);
 }
 
 function handleScoreModalBackdrop(event) {
@@ -1159,4 +1258,18 @@ document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && document.getElementById('scoreModal')?.style.display === 'flex') {
         closeScoreModal();
     }
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        pauseItemTimer();
+        persistExamState();
+    } else {
+        resumeItemTimer();
+    }
+});
+
+window.addEventListener('pagehide', () => {
+    pauseItemTimer();
+    persistExamState();
 });

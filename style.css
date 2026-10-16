@@ -623,7 +623,10 @@ body, html {
 .score-summary-exercise-row:last-child { border-bottom: 0; }
 .score-summary-modal.score-summary-exam .score-summary-exercise-row { border-color: rgba(169, 211, 255, 0.16); }
 .sse-name { min-width: 0; font-size: 0.78rem; font-weight: 600; }
+.sse-result { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
 .sse-value { flex: none; color: #666; font: 0.74rem 'Roboto Mono', monospace; white-space: nowrap; }
+.sse-metrics { color: #777; font: 0.64rem 'Roboto Mono', monospace; white-space: nowrap; }
+.score-summary-modal.score-summary-exam .sse-metrics { color: #9fc4e7; }
 
 .score-summary-download-status { flex: 1; min-width: 0; color: #777; font-size: 0.72rem; }
 .score-summary-download-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; }
@@ -640,6 +643,9 @@ body, html {
     .sst-separator, .sst-maximum { font-size: 1.35rem; }
     .qr-code-box { min-width: 142px; min-height: 142px; padding: 8px; }
     .qr-code-box img, .qr-code-box canvas { width: 142px !important; height: 142px !important; }
+    .score-summary-exercise-row { align-items: flex-start; }
+    .sse-result { max-width: 62%; }
+    .sse-metrics { white-space: normal; text-align: right; }
     .score-modal-footer { display: grid; grid-template-columns: 1fr 1fr; padding: 0.8rem; }
     .score-summary-download-status { grid-column: 1 / -1; min-height: 0.9rem; }
     .score-modal-footer button { width: 100%; }
