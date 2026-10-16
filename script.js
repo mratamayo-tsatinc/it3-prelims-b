@@ -178,7 +178,6 @@ window.onload = async function() {
                 startTimer(examMinutes);
             } else {
                 stopTimer();
-                const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'none';
             }
         }
         closeSettingsModal();
@@ -200,7 +199,8 @@ window.onload = async function() {
             ? savedEndTime
             : Date.now() + Math.max(0, Math.floor(minutes) * 60 * 1000);
 
-        const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'inline-flex';
+        const timerContainer = document.getElementById('timerContainer');
+        if (timerContainer) timerContainer.style.display = 'flex';
 
         const tick = () => {
             timerSeconds = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
@@ -219,6 +219,8 @@ window.onload = async function() {
 
     function stopTimer() {
         if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        const timerContainer = document.getElementById('timerContainer');
+        if (timerContainer) timerContainer.style.display = 'none';
     }
 
     function updateTimerUI() {
@@ -227,12 +229,9 @@ window.onload = async function() {
         const mm = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
         const ss = String(timerSeconds % 60).padStart(2, '0');
         display.textContent = `${mm}:${ss}`;
-        // UX: when under 60 seconds, show warning color for urgency
-        if (timerSeconds <= 60 && timerSeconds > 0) {
-            display.classList.add('warning');
-        } else {
-            display.classList.remove('warning');
-        }
+        display.classList.remove('warning', 'critical');
+        if (timerSeconds <= 60) display.classList.add('critical');
+        else if (timerSeconds <= 300) display.classList.add('warning');
     }
 
     function onTimerExpire() {
@@ -279,7 +278,7 @@ async function handleLogin() {
                 : null;
             startTimer(examMinutes, savedEndTime);
         } else {
-            const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'none';
+            stopTimer();
         }
     } else {
         document.getElementById('loginError').textContent = "Invalid credentials.";
@@ -316,23 +315,33 @@ async function loadAllExercises(savedExamState = null) {
 
     restoreExamProgress(savedExamState);
     for (const fileName of EXERCISES) {
-        const data = exerciseData[fileName];
-        if (!data) continue;
-        const safeId = fileName.replace(/\./g, '-');
-        const scoreSpan = document.getElementById(`score-${safeId}`);
-        if (!scoreSpan) continue;
-        scoreSpan.textContent = `${data.lastScore}/${data.wrongCount}`;
-        scoreSpan.classList.toggle('completed-score', data.locked && data.lastScore === data.wrongCount);
+        updateSidebarScore(fileName);
     }
 
     if (list.firstChild) list.firstChild.click();
     // Set total max score and accumulated score
     updateTotalScore();
     // Ensure timer visibility on the activity page according to mode
-    const display = document.getElementById('timerDisplay');
-    if (display) {
-        if (appMode === 'exam') display.style.display = 'inline-flex';
-        else display.style.display = 'none';
+    const timerContainer = document.getElementById('timerContainer');
+    if (timerContainer) {
+        timerContainer.style.display = appMode === 'exam' ? 'flex' : 'none';
+    }
+}
+
+function updateSidebarScore(fileName) {
+    const data = exerciseData[fileName];
+    if (!data) return;
+
+    const safeId = fileName.replace(/\./g, '-');
+    const scoreSpan = document.getElementById(`score-${safeId}`);
+    if (!scoreSpan) return;
+
+    scoreSpan.textContent = `${data.lastScore}/${data.wrongCount}`;
+    scoreSpan.classList.remove('completed-score', 'partial-score');
+    if (data.wrongCount > 0 && data.lastScore === data.wrongCount) {
+        scoreSpan.classList.add('completed-score');
+    } else if (data.lastScore > 0) {
+        scoreSpan.classList.add('partial-score');
     }
 }
 
@@ -373,11 +382,7 @@ function resetCurrentExercise() {
         label.classList.remove('selected','wrong','correct','disabled');
     });
 
-    // reset sidebar score for this file
-    const safeId = currentFile.replace(/\./g, '-');
-    const scoreSpan = document.getElementById(`score-${safeId}`);
-    if (scoreSpan) scoreSpan.textContent = `0/${data.wrongCount}`;
-    scoreSpan.classList.remove('completed-score');
+    updateSidebarScore(currentFile);
 
     // reset UI
     const verifyBtn = document.getElementById('verifyBtn');
@@ -802,15 +807,11 @@ function checkAnswers() {
         }
     });
 
-    // Update Sidebar Score and lock exercise
-    const safeId = currentFile.replace(/\./g, '-');
-    const scoreSpan = document.getElementById(`score-${safeId}`);
-    scoreSpan.textContent = `${score}/${data.wrongCount}`;
-
     // store last score and lock
     data.lastScore = score;
     data.locked = true;
     data.lastVerifiedAt = new Date().toISOString();
+    updateSidebarScore(currentFile);
     persistExamState();
 
     // disable all inputs for this exercise
@@ -837,13 +838,11 @@ function checkAnswers() {
 
     const msg = document.getElementById('feedback');
     if (score === data.wrongCount) {
-        scoreSpan.classList.add('completed-score');
         msg.textContent = "✨ Perfect! Activity Complete! ✨";
         msg.style.color = "var(--secondary)";
         // smaller celebratory burst for a single exercise
         triggerConfetti({ type: 'exercise' });
     } else {
-        scoreSpan.classList.remove('completed-score');
         msg.textContent = `Progress: ${score}/${data.wrongCount} correct.`;
         msg.style.color = "var(--text-main)";
     }

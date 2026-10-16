@@ -322,10 +322,22 @@ body, html {
     color: white;
 }
 
-/* Green indicator for 100% completion */
+/* Sidebar score states: unanswered, partial credit, and perfect. */
 .completed-score {
     background: var(--secondary) !important;
     color: #004d40 !important;
+    font-weight: 600;
+}
+
+.partial-score {
+    background: #ff9800 !important;
+    color: #fff !important;
+    font-weight: 600;
+}
+
+.nav-score:not(.completed-score):not(.partial-score) {
+    background: #e0e0e0;
+    color: #666;
 }
 
 /* Total score summary in sidebar */
@@ -354,20 +366,55 @@ body, html {
     border-radius: 6px;
 }
 
-/* Timer in header */
+/* Fixed exam timer, matching the Complete Me activity UX. */
 .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .header-left { flex: 1; }
-.header-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-.timer {
-    background: var(--primary);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-weight: 700;
-    font-family: 'Roboto Mono', monospace;
-    font-size: 0.9rem;
+.timer-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: flex-end;
+    z-index: 999;
 }
-.timer.warning { background: var(--error); color: white; box-shadow: 0 2px 8px rgba(176,0,32,0.18); }
+.timer-badge {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.2rem 1.8rem;
+    border: 3px solid var(--secondary);
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    box-shadow: 0 8px 24px rgba(98, 0, 238, 0.3), 0 0 20px rgba(3, 218, 198, 0.2);
+}
+.timer-label {
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.timer-display {
+    min-width: 90px;
+    color: var(--secondary);
+    font-family: 'Roboto Mono', monospace;
+    font-size: 1.8rem;
+    font-weight: 800;
+    text-align: center;
+}
+.timer-display.warning {
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+.timer-display.critical {
+    color: #ff6b6b;
+    text-shadow: 0 0 10px rgba(255, 107, 107, 0.6);
+    animation: timer-pulse 0.8s infinite;
+}
+@keyframes timer-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
 
 /* visually indicate disabled primary buttons */
 .primary-btn[disabled], .primary-btn.disabled {

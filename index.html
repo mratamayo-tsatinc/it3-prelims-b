@@ -48,6 +48,13 @@
         </nav>
 
         <main class="content">
+            <div id="timerContainer" class="timer-container" style="display: none;">
+                <div class="timer-badge">
+                    <span class="timer-label">Time Remaining:</span>
+                    <span id="timerDisplay" class="timer-display">15:00</span>
+                </div>
+            </div>
+
             <div id="loader" class="loader-container" style="display: none;">
                 <div class="spinner"></div>
                 <p>Loading code...</p>
@@ -58,9 +65,6 @@
                     <div class="header-left">
                         <h2 id="currentFileName">Select an Exercise</h2>
                         <p id="exerciseInstruction">Select up to <strong id="maxTokens">0</strong> incorrect token(s) by clicking them. <span class="selected-info">Selected: <strong id="selectedCount">0</strong>/<strong id="maxTokensLabel">0</strong></span></p>
-                    </div>
-                    <div class="header-right">
-                        <div id="timerDisplay" class="timer" style="display: none;">15:00</div>
                     </div>
                 </div>
                 
