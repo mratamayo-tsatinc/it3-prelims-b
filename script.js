@@ -37,9 +37,96 @@ let appMode = 'exam'; // 'practice' | 'exam'
 let examMinutes = 30; // default minutes for exam mode
 let timerSeconds = 0;
 let timerInterval = null;
+let timerEndsAt = null;
 let scoreModalShown = false;
 // Track whether we've already shown the full-course celebration
 let totalCelebrated = false;
+
+const EXAM_STORAGE_PREFIX = 'bug-catcher:exam:';
+const EXAM_STORAGE_VERSION = 1;
+
+function getExamStorageKey(email = currentUser) {
+    return `${EXAM_STORAGE_PREFIX}${encodeURIComponent(email.trim().toLowerCase())}`;
+}
+
+function getExerciseSignature(data) {
+    const source = data.answers
+        .map(answer => `${answer.isWrong ? '1' : '0'}:${answer.token}`)
+        .join('\u001f');
+    let hash = 2166136261;
+
+    for (let i = 0; i < source.length; i++) {
+        hash ^= source.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return `${data.answers.length}:${data.wrongCount}:${hash >>> 0}`;
+}
+
+function readExamState() {
+    if (appMode !== 'exam' || !currentUser) return null;
+
+    try {
+        const saved = JSON.parse(localStorage.getItem(getExamStorageKey()) || 'null');
+        if (!saved || saved.version !== EXAM_STORAGE_VERSION) return null;
+        if (saved.email.toLowerCase() !== currentUser.toLowerCase()) return null;
+        return saved;
+    } catch (error) {
+        console.warn('Unable to read saved exam progress.', error);
+        return null;
+    }
+}
+
+function persistExamState() {
+    if (appMode !== 'exam' || !currentUser) return;
+
+    const exercises = {};
+    for (const fileName of EXERCISES) {
+        const data = exerciseData[fileName];
+        if (!data) continue;
+
+        exercises[fileName] = {
+            signature: getExerciseSignature(data),
+            userProgress: data.userProgress.map(Boolean),
+            lastScore: data.lastScore || 0,
+            locked: !!data.locked,
+            lastVerifiedAt: data.lastVerifiedAt || null
+        };
+    }
+
+    const state = {
+        version: EXAM_STORAGE_VERSION,
+        email: currentUser,
+        examMinutes,
+        timerEndsAt,
+        savedAt: new Date().toISOString(),
+        exercises
+    };
+
+    try {
+        localStorage.setItem(getExamStorageKey(), JSON.stringify(state));
+    } catch (error) {
+        console.warn('Unable to save exam progress.', error);
+    }
+}
+
+function restoreExamProgress(savedState) {
+    if (!savedState || !savedState.exercises) return;
+
+    for (const fileName of EXERCISES) {
+        const data = exerciseData[fileName];
+        const saved = savedState.exercises[fileName];
+        if (!data || !saved || saved.signature !== getExerciseSignature(data)) continue;
+        if (!Array.isArray(saved.userProgress) || saved.userProgress.length !== data.userProgress.length) continue;
+
+        data.userProgress = saved.userProgress.map(Boolean);
+        data.lastScore = Number.isInteger(saved.lastScore)
+            ? Math.max(0, Math.min(saved.lastScore, data.wrongCount))
+            : 0;
+        data.locked = !!saved.locked;
+        data.lastVerifiedAt = typeof saved.lastVerifiedAt === 'string' ? saved.lastVerifiedAt : null;
+    }
+}
 
 window.onload = async function() {
     try {
@@ -107,19 +194,27 @@ window.onload = async function() {
     });
 
     // TIMER
-    function startTimer(minutes) {
+    function startTimer(minutes, savedEndTime = null) {
         stopTimer();
-        timerSeconds = Math.max(0, Math.floor(minutes) * 60);
-        updateTimerUI();
+        timerEndsAt = Number.isFinite(savedEndTime)
+            ? savedEndTime
+            : Date.now() + Math.max(0, Math.floor(minutes) * 60 * 1000);
+
         const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'inline-flex';
-        timerInterval = setInterval(() => {
-            timerSeconds--;
+
+        const tick = () => {
+            timerSeconds = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
             updateTimerUI();
             if (timerSeconds <= 0) {
                 stopTimer();
                 onTimerExpire();
+                return false;
             }
-        }, 1000);
+            return true;
+        };
+
+        persistExamState();
+        if (tick()) timerInterval = setInterval(tick, 1000);
     }
 
     function stopTimer() {
@@ -141,19 +236,26 @@ window.onload = async function() {
     }
 
     function onTimerExpire() {
-        const fb = document.getElementById('feedback');
-        if (fb) { fb.textContent = 'Time is up — exam finished.'; fb.style.color = 'var(--error)'; }
         // Ensure no further resets are possible; keep inputs disabled
         for (const file in exerciseData) {
             const data = exerciseData[file];
             // lock everything not already verified
             if (!data.locked) data.locked = true;
         }
+        persistExamState();
+
+        if (currentFile) {
+            const currentNav = document.getElementById(`nav-${currentFile.replace(/\./g, '-')}`);
+            if (currentNav) switchExercise(currentFile, currentNav);
+        }
+
+        const fb = document.getElementById('feedback');
+        if (fb) { fb.textContent = 'Time is up — exam finished.'; fb.style.color = 'var(--error)'; }
         updateTotalScore();
         showScoreModal('time');
     }
 
-function handleLogin() {
+async function handleLogin() {
     const email = document.getElementById('emailInput').value.trim();
     const id = document.getElementById('studentNumInput').value.trim();
     const user = studentDatabase.find(s => s.email === email && s.id === id);
@@ -164,10 +266,18 @@ function handleLogin() {
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         document.getElementById('userDisplay').textContent = email;
-        loadAllExercises();
-        // start exam timer if in exam mode
+        const savedExamState = readExamState();
+        await loadAllExercises(savedExamState);
+
+        // Resume the saved exam deadline, or start a new timer for this student.
         if (appMode === 'exam') {
-            startTimer(examMinutes);
+            if (Number.isInteger(savedExamState?.examMinutes)) {
+                examMinutes = savedExamState.examMinutes;
+            }
+            const savedEndTime = Number.isFinite(savedExamState?.timerEndsAt)
+                ? savedExamState.timerEndsAt
+                : null;
+            startTimer(examMinutes, savedEndTime);
         } else {
             const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'none';
         }
@@ -176,9 +286,11 @@ function handleLogin() {
     }
 }
 
-async function loadAllExercises() {
+async function loadAllExercises(savedExamState = null) {
     const list = document.getElementById('fileList');
     list.innerHTML = ""; 
+    exerciseData = {};
+    currentFile = "";
     document.getElementById('loader').style.display = 'block';
 
     for (const fileName of EXERCISES) {
@@ -201,6 +313,18 @@ async function loadAllExercises() {
         } catch (e) { console.warn("Missing: " + fileName); }
     }
     document.getElementById('loader').style.display = 'none';
+
+    restoreExamProgress(savedExamState);
+    for (const fileName of EXERCISES) {
+        const data = exerciseData[fileName];
+        if (!data) continue;
+        const safeId = fileName.replace(/\./g, '-');
+        const scoreSpan = document.getElementById(`score-${safeId}`);
+        if (!scoreSpan) continue;
+        scoreSpan.textContent = `${data.lastScore}/${data.wrongCount}`;
+        scoreSpan.classList.toggle('completed-score', data.locked && data.lastScore === data.wrongCount);
+    }
+
     if (list.firstChild) list.firstChild.click();
     // Set total max score and accumulated score
     updateTotalScore();
@@ -228,7 +352,7 @@ function resetCurrentExercise() {
     const data = exerciseData[currentFile];
     if (!data) return;
     // In exam mode, resetting is disabled once an activity has been verified
-    if (appMode === 'exam' && data.lastVerifiedAt) {
+    if (appMode === 'exam' && data.locked) {
         const fb = document.getElementById('feedback');
         fb.textContent = 'Reset is disabled in Exam Mode.';
         fb.style.color = 'var(--error)';
@@ -267,6 +391,7 @@ function resetCurrentExercise() {
 
     // update total accumulated score
     updateTotalScore();
+    persistExamState();
 }
 
 function updateTotalScore() {
@@ -592,6 +717,8 @@ function toggleToken(index, checkbox) {
             cb.parentElement.classList.remove('disabled');
         }
     });
+
+    persistExamState();
 }
 
 function switchExercise(name, el) {
@@ -613,9 +740,13 @@ function switchExercise(name, el) {
     // Restore previous checkbox selections
     const checks = display.querySelectorAll('.token-option input[type="checkbox"]');
     checks.forEach((input, idx) => {
-        input.checked = !!exerciseData[name].userProgress[idx];
-        if (input.checked) input.parentElement.classList.add('selected');
-        else input.parentElement.classList.remove('selected');
+        const data = exerciseData[name];
+        const label = input.parentElement;
+        input.checked = !!data.userProgress[idx];
+        label.classList.toggle('selected', input.checked);
+        const showResult = data.locked && !!data.lastVerifiedAt && input.checked;
+        label.classList.toggle('correct', showResult && data.answers[idx].isWrong);
+        label.classList.toggle('wrong', showResult && !data.answers[idx].isWrong);
     });
 
     // update selected counter UI
@@ -680,6 +811,7 @@ function checkAnswers() {
     data.lastScore = score;
     data.locked = true;
     data.lastVerifiedAt = new Date().toISOString();
+    persistExamState();
 
     // disable all inputs for this exercise
     const checks = document.querySelectorAll('.token-option input[type="checkbox"]');

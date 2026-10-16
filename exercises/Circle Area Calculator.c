@@ -3,7 +3,7 @@
 int main() 
 {
     [[Float]] radius, area;
-    const [[int]] PI = 3.14159[[.]]
+    const float PI = 3.14159[[.]]
     
     print("Enter radius: ");
     [[Scanf]]("%f", &radius);
